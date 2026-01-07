@@ -48,18 +48,29 @@ export const generateMetaphorImage = async (
 ) => {
   const ai = getAIClient();
 
+  // Strategy: Use gemini-2.5-flash-image for standard 1K requests to avoid permission issues (403).
+  // Only use gemini-3-pro-image-preview if the user explicitly requests higher resolution (2K/4K).
+  const isHighRes = imageSize === ImageSize.SIZE_2K || imageSize === ImageSize.SIZE_4K;
+  const model = isHighRes ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+
+  const config: any = {
+    imageConfig: {
+      aspectRatio: aspectRatio,
+    },
+  };
+
+  // imageSize parameter is only supported by the Pro model
+  if (isHighRes) {
+    config.imageConfig.imageSize = imageSize;
+  }
+
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
+      model: model,
       contents: {
         parts: [{ text: prompt }],
       },
-      config: {
-        imageConfig: {
-          aspectRatio: aspectRatio,
-          imageSize: imageSize,
-        },
-      },
+      config: config,
     });
 
     // Extract image
@@ -69,8 +80,17 @@ export const generateMetaphorImage = async (
       }
     }
     throw new Error("API 未返回图像数据");
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Image Gen Error:", error);
+    
+    // Provide a more helpful error message for 403 on Pro model
+    if (error.message?.includes('403') || error.status === 'PERMISSION_DENIED') {
+        if (isHighRes) {
+            throw new Error("您的 API Key 权限不足，无法使用高清 (Pro) 模型。请尝试切换回 1K 尺寸。");
+        } else {
+            throw new Error("API 权限被拒绝。请检查您的 API Key 是否有效，或是否已启用相关 API 服务。");
+        }
+    }
     throw error;
   }
 };

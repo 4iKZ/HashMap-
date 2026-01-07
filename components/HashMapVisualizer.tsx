@@ -2,11 +2,19 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Bucket, HashMapNode, LogEntry } from '../types';
 import { ArrowDown, Database, RefreshCw, Plus, Trash2, Zap } from 'lucide-react';
 
-const INITIAL_CAPACITY = 4;
+// Updated to match Java's real default values
+const INITIAL_CAPACITY = 16; 
 const LOAD_FACTOR = 0.75;
 
 const HashMapVisualizer: React.FC = () => {
-  const [buckets, setBuckets] = useState<Bucket[]>([]);
+  // Initialize buckets lazily to avoid recreating on every render
+  // and removed the useEffect that was resetting buckets on capacity change
+  const [buckets, setBuckets] = useState<Bucket[]>(() => 
+    Array.from({ length: INITIAL_CAPACITY }, (_, i) => ({
+      index: i,
+      nodes: [],
+    }))
+  );
   const [capacity, setCapacity] = useState(INITIAL_CAPACITY);
   const [itemCount, setItemCount] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -18,15 +26,6 @@ const HashMapVisualizer: React.FC = () => {
   const [activeBucketIndex, setActiveBucketIndex] = useState<number | null>(null);
   const [isRehashing, setIsRehashing] = useState(false);
 
-  // Initialize buckets
-  useEffect(() => {
-    const newBuckets: Bucket[] = Array.from({ length: capacity }, (_, i) => ({
-      index: i,
-      nodes: [],
-    }));
-    setBuckets(newBuckets);
-  }, [capacity]);
-
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
     setLogs(prev => [{
       id: Math.random().toString(36).substr(2, 9),
@@ -37,6 +36,8 @@ const HashMapVisualizer: React.FC = () => {
   };
 
   // Simple string hash for visualization
+  // Note: Java uses a more complex hashCode() + (h ^ (h >>> 16)) perturbation
+  // We stick to a simpler visual hash to keep the math easy to follow for the user
   const getHash = (key: string) => {
     let hash = 0;
     for (let i = 0; i < key.length; i++) {
@@ -46,13 +47,14 @@ const HashMapVisualizer: React.FC = () => {
   };
 
   const getBucketIndex = (hash: number, currentCapacity: number) => {
+    // Represents (n - 1) & hash in Java (which is modulo for powers of 2)
     return hash % currentCapacity;
   };
 
   const resize = async (currentBuckets: Bucket[]) => {
     setIsRehashing(true);
     const newCapacity = capacity * 2;
-    addLog(`达到 Load Factor 阈值 (${(itemCount / capacity).toFixed(2)} > ${LOAD_FACTOR})。正在扩容至 ${newCapacity}...`, 'warning');
+    addLog(`达到 Load Factor 阈值 (${(itemCount / capacity).toFixed(2)} > ${LOAD_FACTOR})。正在扩容至 ${newCapacity} (Java behavior: 2x)...`, 'warning');
     
     // Create new empty buckets
     const newBuckets: Bucket[] = Array.from({ length: newCapacity }, (_, i) => ({
@@ -133,7 +135,12 @@ const HashMapVisualizer: React.FC = () => {
     setCapacity(INITIAL_CAPACITY);
     setItemCount(0);
     setLogs([]);
-    addLog('HashMap 已清空。', 'warning');
+    // Reset buckets manually now that useEffect is gone
+    setBuckets(Array.from({ length: INITIAL_CAPACITY }, (_, i) => ({
+      index: i,
+      nodes: [],
+    })));
+    addLog('HashMap 已清空。重置为默认 Capacity: 16。', 'warning');
   };
 
   return (
@@ -238,7 +245,8 @@ const HashMapVisualizer: React.FC = () => {
         )}
 
         <div className="flex-1 overflow-y-auto pr-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {/* Changed grid cols to support 16 buckets more gracefully */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {buckets.map((bucket) => (
               <div 
                 key={bucket.index}
